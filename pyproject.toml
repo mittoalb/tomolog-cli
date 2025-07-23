@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tomolog-cli"
+dynamic = ["version"]
+authors = [
+    {name = "Viktor Nikitin", email = "vnikitin@anl.gov"}
+]
+description = "cli for loggin data to google slides"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "google-auth",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
+    "google-api-python-client",
+    "PySocks",
+    "httplib2",
+]
+
+[project.optional-dependencies]
+globus = [
+    "globus-sdk",
+]
+
+[project.urls]
+Homepage = "https://github.com/xray-imaging/tomolog-cli"
+Repository = "https://github.com/xray-imaging/tomolog-cli"
+Issues = "https://github.com/xray-imaging/tomolog-cli/issues"
+
+[project.scripts]
+tomolog = "tomolog_cli.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.setuptools.package-data]
+"*" = ["*.txt", "*.md", "*.rst"]

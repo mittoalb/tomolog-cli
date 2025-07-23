@@ -22,8 +22,28 @@ def init(args):
         log.error("{0} already exists".format(args.config))
 
 
+def run_gui(args):
+    """Launch the Tomolog GUI"""
+    log.warning('Starting Tomolog GUI')
+    
+    try:
+        import subprocess
+        import os
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        gui_path = os.path.join(script_dir, 'gui.py')
+        
+        # Run: python gui.py from the same folder
+        subprocess.run(['python', gui_path])
+        
+    except FileNotFoundError:
+        log.error("gui.py file not found in the same directory")
+    except Exception as e:
+        log.error(f"Error starting GUI: {e}")
+
+
 def run_status(args):
-    config.log_values(args)
+    config.log_values(args)    
 
 
 def run_log(args):
@@ -97,6 +117,7 @@ def main():
         ('init',        init,            (),     "Create configuration file"),
         ('run',         run_log,         params, "Run data logging to google slides"),
         ('status',      run_status,      params, "Show the tomolog status"),
+        ('gui',         run_gui,         params, "Start Tomolog GUI"),
     ]
 
     subparsers = parser.add_subparsers(title="Commands", metavar='')
