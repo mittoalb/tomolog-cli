@@ -81,15 +81,15 @@ def get_slides_path(url):
     add_log(f"Using slides path: {url}")
     return url
 
-def get_slice_count(file_path):
+def get_slice_count(file_path, file_start=657):
     """Get the number of available slices from the reconstruction directory"""
     if not file_path:
         return 100
     
     try:
-        # For preview, use the first file from template
+        # For preview, use the file_start number from the GUI
         if '{}' in file_path:
-            preview_file = file_path.format(657)  # Use default number
+            preview_file = file_path.format(file_start)  # Use the actual start number
         else:
             preview_file = file_path
         
@@ -267,6 +267,7 @@ def run_tomolog_cli(params):
         
         # Get common parameters
         slides_path = get_slides_path(params.get('slides_url'))
+        cloud_service = params.get('cloud_service', 'aps')  # Get selected cloud service
         
         # Process each file
         for i, file_path in enumerate(file_list):
@@ -299,7 +300,8 @@ def run_tomolog_cli(params):
             if params.get('visibility') == 'public':
                 cmd.extend(["--public", "True"])
                 
-            cmd.extend(["--cloud-service", "aps"])
+            # Use the selected cloud service instead of hardcoded 'aps'
+            cmd.extend(["--cloud-service", cloud_service])
             cmd_str = " ".join(cmd)
             add_log(f"Command: {cmd_str}")
             
@@ -314,7 +316,6 @@ def run_tomolog_cli(params):
             )
             
             app_state['current_process'] = process
-            
             
             ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
             # Read output line by line
@@ -429,9 +430,9 @@ app.layout = html.Div([
                 html.Div(id="roi-info", style={'marginTop': '10px', 'color': '#aaa', 'fontSize': '12px'})
             ], style={'backgroundColor': '#333', 'padding': '10px', 'borderRadius': '5px', 'marginBottom': '10px'}),
             
-            # Google settings
+            # Google settings with cloud service
             html.Div([
-                html.H4("Google Settings", style={'color': '#e0e0e0', 'marginBottom': '8px'}),
+                html.H4("Settings", style={'color': '#e0e0e0', 'marginBottom': '8px'}),
                 
                 dcc.Input(id="slides-url", placeholder="Google Slides URL",
                          value="https://docs.google.com/presentation/d/13-4469-a4b0-91f35a517985/edit",
@@ -449,6 +450,28 @@ app.layout = html.Div([
                                  value=app_state['ip_type'],
                                  style={'color': '#e0e0e0', 'fontSize': '12px'},
                                  labelStyle={'marginRight': '10px', 'display': 'inline-block'})
+                ], style={'marginBottom': '8px'}),
+                
+                # Add cloud service selection
+                html.Div([
+                    html.Label("Cloud Service:", 
+                              style={'color': '#e0e0e0', 'fontSize': '12px', 'display': 'block', 'marginBottom': '4px'}),
+                    dcc.Dropdown(
+                        id="cloud-service",
+                        options=[
+                            {'label': 'APS (Default)', 'value': 'aps'},
+                            {'label': 'Imgur', 'value': 'imgur'},
+                            {'label': 'Globus', 'value': 'globus'}
+                        ],
+                        value='aps',  # Default to APS
+                        style={
+                            'backgroundColor': '#444', 
+                            'color': 'black',  # Text color for dropdown
+                            'border': '1px solid #666'
+                        },
+                        # Dropdown menu styling
+                        className='custom-dropdown'
+                    )
                 ])
             ], style={'backgroundColor': '#333', 'padding': '10px', 'borderRadius': '5px', 'marginBottom': '10px'}),
             
@@ -501,16 +524,61 @@ app.layout = html.Div([
     'fontFamily': 'system-ui, -apple-system, sans-serif', 'margin': 0, 'padding': 0
 })
 
+# Add CSS styling for the dropdown
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            .custom-dropdown .Select-control {
+                background-color: #444 !important;
+                border: 1px solid #666 !important;
+                color: white !important;
+            }
+            .custom-dropdown .Select-value-label {
+                color: white !important;
+            }
+            .custom-dropdown .Select-placeholder {
+                color: #aaa !important;
+            }
+            .custom-dropdown .Select-menu-outer {
+                background-color: #444 !important;
+            }
+            .custom-dropdown .Select-option {
+                background-color: #444 !important;
+                color: white !important;
+            }
+            .custom-dropdown .Select-option:hover {
+                background-color: #555 !important;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
 # Slice range callback
 @app.callback(
     [Output('slice-slider', 'max'),
      Output('slice-slider', 'value'),
      Output('slice-slider', 'marks'),
      Output('slice-info', 'children')],
-    [Input('file-path', 'value')]
+    [Input('file-path', 'value'),
+     Input('file-start', 'value')]
 )
-def update_slice_range(file_path):
-    slice_count = get_slice_count(file_path)
+def update_slice_range(file_path, file_start):
+    slice_count = get_slice_count(file_path, file_start or 657)
     
     # Set reasonable marks
     if slice_count <= 10:
@@ -525,13 +593,10 @@ def update_slice_range(file_path):
         marks = {i: {'label': str(i), 'style': {'color': '#aaa', 'fontSize': '10px'}} 
                 for i in range(0, slice_count, step)}
     
-    # Ensure we have marks at 0 and max
     marks[0] = {'label': '0', 'style': {'color': '#aaa', 'fontSize': '10px'}}
     marks[slice_count - 1] = {'label': str(slice_count - 1), 'style': {'color': '#aaa', 'fontSize': '10px'}}
     
-    # Set initial value to middle
     initial_value = min(50, slice_count // 2)
-    
     info_text = f"Available slices: 0 to {slice_count - 1} (total: {slice_count})"
     
     return slice_count - 1, initial_value, marks, info_text
@@ -550,7 +615,7 @@ def update_file_range_display(start, count):
         return str(start), str(end), f"{count} files"
     return "—", "—", "0 files"
 
-# Preview callback with real-time intensity updates
+# Preview callback
 @app.callback(
     [Output('preview-container', 'children'),
      Output('roi-info', 'children')],
@@ -558,9 +623,10 @@ def update_file_range_display(start, count):
      Input('slice-slider', 'value'),
      Input('min-intensity', 'value'),
      Input('max-intensity', 'value')],
-    [State('file-path', 'value')]
+    [State('file-path', 'value'),
+     State('file-start', 'value')]
 )
-def update_preview(preview_clicks, slice_val, min_intensity, max_intensity, file_path):
+def update_preview(preview_clicks, slice_val, min_intensity, max_intensity, file_path, file_start):
     ctx = dash.callback_context
     
     # Check if we have cached preview data and only min/max changed
@@ -590,9 +656,9 @@ def update_preview(preview_clicks, slice_val, min_intensity, max_intensity, file
                 html.P("Preview not loaded for performance", style={'color': '#666', 'fontSize': '12px', 'textAlign': 'center'})
             ], style={'padding': '20px'}), "No preview loaded"
         
-        # For preview, use the first file from template
+        # For preview, use the file_start number from the GUI instead of hardcoded 657
         if '{}' in file_path:
-            preview_file = file_path.format(657)  # Use default number for preview
+            preview_file = file_path.format(file_start or 657)  # Use actual file_start value
         else:
             preview_file = file_path
         
@@ -710,10 +776,11 @@ def update_logs_realtime(n_intervals):
      State('slice-slider', 'value'),
      State('min-intensity', 'value'),
      State('max-intensity', 'value'),
-     State('visibility', 'value')]
+     State('visibility', 'value'),
+     State('cloud-service', 'value')]
 )
 def handle_buttons(run_clicks, stop_clicks, file_template, file_start, file_count, 
-                  slides_url, slice_val, min_intensity, max_intensity, visibility):
+                  slides_url, slice_val, min_intensity, max_intensity, visibility, cloud_service):
     ctx = dash.callback_context
     
     if ctx.triggered:
@@ -730,11 +797,12 @@ def handle_buttons(run_clicks, stop_clicks, file_template, file_start, file_coun
                     'min_intensity': min_intensity,
                     'max_intensity': max_intensity,
                     'visibility': visibility,
+                    'cloud_service': cloud_service or 'aps',
                     'roi_coords': app_state.get('roi_coords')
                 }
                 
                 file_list = generate_file_list(file_template, file_start or 1, file_count or 1)
-                add_log(f"Starting tomolog on {len(file_list)} files")
+                add_log(f"Starting tomolog on {len(file_list)} files with {cloud_service} cloud service")
                 thread = threading.Thread(target=run_tomolog_cli, args=(params,))
                 thread.daemon = True
                 thread.start()
@@ -755,14 +823,14 @@ def handle_buttons(run_clicks, stop_clicks, file_template, file_start, file_coun
 
 if __name__ == "__main__":
     print("Starting Tomolog Interface...")
-    print("Available at: http://localhost:8050")
+    print("Available at: http://localhost:9000")
     
     try:
         app.run(debug=False, host="0.0.0.0", port=9000)
     except Exception as e:
-        print(f"Port 8050 failed: {e}")
+        print(f"Port 9000 failed: {e}")
         try:
             app.run(debug=False, host="127.0.0.1", port=9001)
         except Exception as e2:
-            print(f"Port 8051 failed: {e2}")
+            print(f"Port 9001 failed: {e2}")
             app.run(debug=False, host="127.0.0.1", port=9002)
