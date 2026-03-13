@@ -49,6 +49,31 @@ For help::
      --verbose             Verbose output (default: False)
      --zoom ZOOM           zoom for reconstruction, e.g. [1,2,4] (default: [1,2,4])
 
+History log
+-----------
+
+Every time ``tomolog run`` completes, an entry is automatically appended to ``~/.tomolog`` in YAML format. Each entry records:
+
+- **date**: timestamp of the run
+- **presentation_url**: URL of the Google Slides presentation
+- **gup**: GUP/proposal number (from ``/measurement/sample/experiment/proposal``)
+- **username**: experimenter name (from ``/measurement/sample/experimenter/name``)
+- **user_id**: experimenter badge ID (from ``/measurement/sample/experimenter/user_id``)
+- **beamline**: beamline name
+- **file**: full path to the HDF5 file
+
+Example ``~/.tomolog``::
+
+   - beamline: 2-BM
+     date: '2026-03-13 17:13:27'
+     file: /data3/2BM/2026-03/Li/sample_159.h5
+     gup: '1018528'
+     presentation_url: https://docs.google.com/presentation/d/.../edit?usp=sharing
+     user_id: '206721'
+     username: Li
+
+This file can be queried by other tools to retrieve the presentation URL for a given proposal number.
+
 For other options::
 
    $ tomolog -h
