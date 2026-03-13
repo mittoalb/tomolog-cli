@@ -46,6 +46,8 @@
 import os
 import uuid
 import pathlib
+import datetime
+import yaml
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
@@ -105,6 +107,9 @@ class TomoLog():
         self.num_angle_key      = '/process/acquisition/rotation/num_angles'
         self.rotation_start_key = '/process/acquisition/rotation/start'
         self.date_key           = '/process/acquisition/start_date'
+        self.proposal_key       = '/measurement/sample/experiment/proposal'
+        self.user_name_key      = '/measurement/sample/experimenter/name'
+        self.user_id_key        = '/measurement/sample/experimenter/user_id'
 
     def publish_descr(self, presentation_id, page_id):
         # add here beamline independent bullets
@@ -186,6 +191,7 @@ class TomoLog():
 
         
         presentation_id, page_id = self.init_slide()
+        self.save_history(self.args.presentation_url)
         self.publish_descr(presentation_id, page_id)
         self.publish_note(presentation_id, page_id)
         proj = self.read_raw()
@@ -209,6 +215,30 @@ class TomoLog():
         self.google_slide.create_textbox_with_text(presentation_id, page_id, os.path.basename(
             self.args.file_name)[:-3], 400, 50, 0, 0, 13, 1)
         return presentation_id, page_id
+
+    def save_history(self, presentation_url):
+        history_file = pathlib.Path.home() / '.tomolog'
+        entry = {
+            'date':             datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'presentation_url': str(presentation_url),
+            'gup':              str(self.meta.get(self.proposal_key,  [None])[0]),
+            'username':         str(self.meta.get(self.user_name_key, [None])[0]),
+            'user_id':          str(self.meta.get(self.user_id_key,   [None])[0]),
+            'beamline':         str(self.meta.get(self.beamline_key,  [None])[0]),
+            'file':             str(self.args.file_name),
+        }
+        history = []
+        if history_file.exists():
+            try:
+                with open(history_file) as f:
+                    history = yaml.safe_load(f) or []
+            except yaml.YAMLError:
+                log.warning('Could not parse existing %s, starting fresh' % history_file)
+                history = []
+        history.append(entry)
+        with open(history_file, 'w') as f:
+            yaml.safe_dump(history, f, default_flow_style=False, allow_unicode=True)
+        log.info('History saved to %s' % history_file)
 
     def read_meta_item(self, template):
         try:
