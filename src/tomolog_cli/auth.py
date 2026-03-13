@@ -87,6 +87,7 @@ def google_slide(args, token_fname):
             # Replace 'YOUR_PRESENTATION_ID' with a valid one if available
             slides.presentations().get(presentationId=extract_presentation_id(args.presentation_url)).execute()
             log.info("✅ Google Slides API connection verified.")
+            log.info("Presentation URL: %s" % args.presentation_url)
         except Exception as e:
             log.error("❌ Failed to verify Google Slides connection.")
             log.error(str(e))

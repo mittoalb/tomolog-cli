@@ -157,6 +157,10 @@ script
 
 # tomolog temp files
 ####################
+*.jpg
+tmp*
+temp*
+.loglogin
 projection.jpg
 reconstruction.jpg
 web_cam.jpg
