@@ -87,11 +87,12 @@ def google_slide(args, token_fname):
             # Replace 'YOUR_PRESENTATION_ID' with a valid one if available
             slides.presentations().get(presentationId=extract_presentation_id(args.presentation_url)).execute()
             log.info("✅ Google Slides API connection verified.")
+            log.info("Presentation URL: %s" % args.presentation_url)
         except Exception as e:
             log.error("❌ Failed to verify Google Slides connection.")
             log.error(str(e))
             log.error('If this is a public network computer run tomolog using the --public option!')
-            log.error('If this is a private network computer start SSH tunnel: ssh -D 1081 user@public.machine.ip -N')
+            log.error('If this is a private network computer start on it an SSH tunnel: ssh -D %s user@public.machine.ip -N' % args.port)
             exit()
         snippets = google_snippets.SlidesSnippets(slides, creds)
         return snippets

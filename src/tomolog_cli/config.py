@@ -167,6 +167,10 @@ SECTIONS['general'] = {
         'type': str,
         'default': '[1,2,4]',
         'help': "zoom for reconstruction, e.g. [1,2,4]"},
+    'note': {
+        'type': str,
+        'default': None,
+        'help': "note for the scan or data with quote"}
 }
 
 SECTIONS['file-reading'] = {
@@ -207,7 +211,7 @@ SECTIONS['parameters'] = {
     'count': {
         'type': int,
         'default': 0,
-        'help': "counter is incremented at each google slide generated. Conter is appended to the url to generate a unique url as required by some service"},
+        'help': "counter is incremented at each google slide generated. Conter is appended to the url to generate a unique url as required by some service"}
 }
 
 PARAMS = ('file-reading', 'parameters')
