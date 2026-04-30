@@ -87,24 +87,32 @@ def upload(args, filename):
     elif args.cloud_service == 'aps':
         log.info('Uploading image to aps web service')
         cloud_url = 'https://www3.xray.aps.anl.gov/tomolog'
+        dest_dir = '/net/joulefs/coulomb_Public/docroot/tomolog/'
         log.info('Uploading image to %s' % cloud_url)
         try:
-            dest_path = shutil.copy(filename, '/net/joulefs/coulomb_Public/docroot/tomolog/')
+            dest_path = shutil.copy(filename, dest_dir)
             log.info('Image copied to web server directory at %s' % dest_path)
-            url = cloud_url + '/' + filename
+            url = cloud_url + '/' + os.path.basename(filename)
             log.info('*** Image url created %s' % url)
         except FileNotFoundError:
-            print("Source file or destination directory not found.")
+            log.error('Source file %s or destination directory %s not found.' % (filename, dest_dir))
+            exit(1)
         except PermissionError:
-            print("Permission denied.")
+            log.error('Permission denied writing to %s. Check that your user has write access to the APS tomolog web directory.' % dest_dir)
+            exit(1)
         except shutil.SameFileError:
-            print("Source and destination represent the same file.")
+            log.error('Source and destination represent the same file: %s' % filename)
+            exit(1)
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            log.error('Unexpected error uploading to APS web service: %s' % e)
+            exit(1)
     elif args.cloud_service == 'globus':
         log.info('Uploading image to globus')
-        log.error('Cloud Serice: %s is not implemented yet' % args.cloud_service)
-        exit()
+        log.error('Cloud Service: %s is not implemented yet' % args.cloud_service)
+        exit(1)
+    else:
+        log.error('Unknown cloud service: %s' % args.cloud_service)
+        exit(1)
 
     args.count = args.count + 1
     return url
