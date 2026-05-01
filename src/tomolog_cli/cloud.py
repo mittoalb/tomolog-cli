@@ -53,6 +53,7 @@ import shutil
 
 from time import sleep
 from tomolog_cli import log
+from tomolog_cli import globus as globus_uploader
 
 def upload(args, filename):
 
@@ -108,8 +109,11 @@ def upload(args, filename):
             exit(1)
     elif args.cloud_service == 'globus':
         log.info('Uploading image to globus')
-        log.error('Cloud Service: %s is not implemented yet' % args.cloud_service)
-        exit(1)
+        url = globus_uploader.upload_file(filename)
+        if not url:
+            log.error('Globus upload failed for %s' % filename)
+            exit(1)
+        log.info('*** Image url created %s' % url)
     else:
         log.error('Unknown cloud service: %s' % args.cloud_service)
         exit(1)
