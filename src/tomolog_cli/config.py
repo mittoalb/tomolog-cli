@@ -151,10 +151,15 @@ SECTIONS['general'] = {
         'default': 8,
         'help': "Number of threads to read tiff"},
     'save-format': {
-        'default': 'tiff',
+        'default': 'auto',
         'type': str,
-        'help': "Reconstruction save format",
-        'choices': ['tiff','h5']},    
+        'help': "Reconstruction save format. 'auto' picks based on what's on disk: single-file h5 if <base>_rec.h5 exists, else tiff folder. Set explicitly to force a layout.",
+        'choices': ['auto', 'tiff', 'h5', 'h5nolinks']},
+    'analysis-path': {
+        'default': None,
+        'type': Path,
+        'help': "Override directory where reconstructions (<base>_rec.h5 / <base>_rec/ + <base>_rec_line.txt) are located. Defaults to <dirname_of_raw>_rec/.",
+        'metavar': 'PATH'},
     'magnification': {
         'type': float,
         'default': -1,
@@ -182,7 +187,8 @@ SECTIONS['file-reading'] = {
     'file-name': {
         'default': '.',
         'type': Path,
-        'help': "Name of the hdf file",
+        'aliases': ['--path'],
+        'help': "Path to an hdf file, or a directory of hdf files to batch-publish",
         'metavar': 'PATH'},
     'doc-dir': {
         'type': str,
@@ -207,7 +213,7 @@ SECTIONS['parameters'] = {
         'default': 'imgur',
         'type': str,
         'help': "cloud service where generated images will be uploaded. Google API retrieves images by url before publishing on slides",
-        'choices': ['imgur','globus', 'aps']},    
+        'choices': ['imgur', 'globus', 'aps']},
     'count': {
         'type': int,
         'default': 0,
@@ -290,8 +296,9 @@ class Params(object):
     def add_parser_args(self, parser):
         for section in self.sections:
             for name in sorted(SECTIONS[section]):
-                opts = SECTIONS[section][name]
-                parser.add_argument('--{}'.format(name), **opts)
+                opts = dict(SECTIONS[section][name])
+                aliases = opts.pop('aliases', ())
+                parser.add_argument('--{}'.format(name), *aliases, **opts)
 
     def add_arguments(self, parser):
         self.add_parser_args(parser)

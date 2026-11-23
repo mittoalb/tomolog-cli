@@ -151,14 +151,73 @@ class TomoLog():
         else:
             pass
 
+    def _rec_dir(self):
+        """Directory holding reconstructions for the current raw file.
+
+        Defaults to '<dirname_of_raw>_rec' (the tomocupy convention).
+        Overridden by --analysis-path when the recons live elsewhere
+        (e.g. /gdata/.../analysis/ while raw data is at /gdata/.../data/).
+        """
+        if self.args.analysis_path is not None:
+            return str(self.args.analysis_path)
+        return os.path.dirname(self.args.file_name) + '_rec'
+
+    def _recon_layout(self):
+        """Resolve the reconstruction layout — 'h5', 'tiff', or None.
+
+        If --save-format is 'auto' (default), inspect the filesystem and pick:
+          - 'h5'   when <rec_dir>/<base>_rec.h5 exists (h5/h5nolinks output)
+          - 'tiff' when <rec_dir>/<base>_rec/ directory exists
+          - None   when neither is present (caller logs a warning)
+        If --save-format is set explicitly, honor it. 'h5' and 'h5nolinks'
+        both map to the single-h5-file reader (h5py reads them identically).
+        """
+        basename = os.path.basename(self.args.file_name)[:-3]
+        rec_dir = self._rec_dir()
+        h5_path = f'{rec_dir}/{basename}_rec.h5'
+        tiff_dir = f'{rec_dir}/{basename}_rec'
+
+        if self.args.save_format == 'auto':
+            if os.path.exists(h5_path):
+                log.info(f'Detected reconstruction layout: h5 ({h5_path})')
+                return 'h5'
+            if os.path.isdir(tiff_dir):
+                log.info(f'Detected reconstruction layout: tiff ({tiff_dir})')
+                return 'tiff'
+            log.warning(f'No reconstruction found at {h5_path} or {tiff_dir}')
+            return None
+        if self.args.save_format in ('h5', 'h5nolinks'):
+            return 'h5'
+        return 'tiff'
+
     def read_rec_line(self):
-        line = None
+        line = ''
         try:
             log.info('Publish reconstruction command line')
             basename = os.path.basename(self.args.file_name)[:-3]
-            dirname = os.path.dirname(self.args.file_name)
-            with open(f'{dirname}_rec/{basename}_rec/rec_line.txt', 'r') as fid:
-                line = fid.readlines()[0]
+            rec_dir = self._rec_dir()
+            layout = self._recon_layout()
+            if layout == 'h5':
+                txt_path = f'{rec_dir}/{basename}_rec_line.txt'
+                h5_path = f'{rec_dir}/{basename}_rec.h5'
+                if os.path.exists(txt_path):
+                    with open(txt_path, 'r') as fid:
+                        line = fid.readlines()[0]
+                else:
+                    # Newer tomocupy runs no longer write the sidecar txt for h5
+                    # output: the command line is stored as an attribute of
+                    # /exchange/data. Fall back to reading it from the h5 file.
+                    with h5py.File(h5_path, 'r') as fid:
+                        cmd = fid['exchange/data'].attrs.get('command', '')
+                        if isinstance(cmd, bytes):
+                            cmd = cmd.decode('utf-8')
+                        elif hasattr(cmd, 'decode'):
+                            cmd = cmd.decode('utf-8')
+                        line = str(cmd)
+            else:
+                path = f'{rec_dir}/{basename}_rec/rec_line.txt'
+                with open(path, 'r') as fid:
+                    line = fid.readlines()[0]
         except:
             log.warning('Skipping the command line for reconstruction')
             line = ''
@@ -189,7 +248,8 @@ class TomoLog():
         
         self.mct_resolution = float(self.meta[self.pixel_size_key][0]) / float(self.meta[self.magnification_key][0].lower().replace("x", ""))
 
-        
+        self.setup_resolutions()
+
         presentation_id, page_id = self.init_slide()
         self.save_history(self.args.presentation_url)
         self.publish_descr(presentation_id, page_id)
@@ -199,6 +259,10 @@ class TomoLog():
         recon = self.read_recon()
         #print(recon)
         self.publish_recon(presentation_id, page_id, recon)
+        cloud.cleanup(self.args)
+
+    def setup_resolutions(self):
+        pass
 
     def init_slide(self):
         # create a slide and publish file name
@@ -263,32 +327,69 @@ class TomoLog():
         binning = int(self.meta[self.binning_key][0])
         recon = []
 
-        if self.args.save_format == 'h5':
-            fname  = os.path.dirname(self.args.file_name)+'_rec/'+os.path.basename(self.args.file_name)[:-3]+'_rec.h5'
-            with h5py.File(fname,'r') as fid:
-                data = fid['exchange/recon']
-                h,w = data.shape[:2]
-                if self.args.idz == -1:
-                    self.args.idz = int(h//2)
-                if self.args.idy == -1:
-                    self.args.idy = int(w//2)
-                if self.args.idx == -1:
-                    self.args.idx = int(w//2)
-                if self.double_fov == True:
-                    binning_rec = np.log2(width//(w//2))
-                else:
-                    binning_rec = np.log2(width//(w))
-                x = data[:,:,self.args.idx]
-                y = data[:,self.args.idy]
-                z = data[self.args.idz]
+        layout = self._recon_layout()
+        if layout is None:
+            return recon
+
+        if layout == 'h5':
+            basename = os.path.basename(self.args.file_name)[:-3]
+            fname = f'{self._rec_dir()}/{basename}_rec.h5'
+            try:
+                with h5py.File(fname, 'r') as fid:
+                    data = fid['exchange/data']
+                    h, w = data.shape[:2]
+                    w2 = data.shape[2]
+                    if self.args.idz == -1:
+                        self.args.idz = int(h//2)
+                    if self.args.idy == -1:
+                        self.args.idy = int(w//2)
+                    if self.args.idx == -1:
+                        self.args.idx = int(w2//2)
+                    if self.double_fov == True:
+                        binning_rec = width // (w // 2)
+                    else:
+                        binning_rec = width // w
+
+                    # Stream through z in bounded-memory chunks and extract
+                    # all three cross-sections in one pass. The old code did
+                    # data[:, :, idx] / data[:, idy] / data[idz] as three
+                    # separate slices; each cross-cut the z-primary chunking
+                    # and forced h5py to rescan the whole file, taking >10 min
+                    # on bin1 volumes.
+                    dtype = data.dtype
+                    idx, idy, idz = self.args.idx, self.args.idy, self.args.idz
+                    bytes_per_slice = int(w) * int(w2) * dtype.itemsize
+                    chunk_z = max(1, (256 * 1024 * 1024) // bytes_per_slice)
+                    if data.chunks is not None:
+                        chunk_z = max(chunk_z, data.chunks[0])
+                    x = np.empty((h, w), dtype=dtype)
+                    y = np.empty((h, w2), dtype=dtype)
+                    z = None
+                    for zs in range(0, h, chunk_z):
+                        ze = min(zs + chunk_z, h)
+                        block = data[zs:ze, :, :]
+                        x[zs:ze] = block[:, :, idx]
+                        y[zs:ze] = block[:, idy, :]
+                        if zs <= idz < ze:
+                            z = block[idz - zs].copy()
+                    if z is None:
+                        z = data[idz]
+                recon = [x, y, z]
+                self.binning_rec = binning_rec
+            except FileNotFoundError:
+                log.error(f'Reconstruction h5 file missing: {fname}')
+                log.warning('Skipping reconstruction')
+            except KeyError:
+                log.error(f'/exchange/data not found in {fname} (h5sino is not supported for slicing)')
+                log.warning('Skipping reconstruction')
         else:
             try:
                 basename = os.path.basename(self.args.file_name)[:-3]
-                dirname = os.path.dirname(self.args.file_name)
+                rec_dir = self._rec_dir()
                 # set the correct prefix to find the reconstructions
                 rec_prefix = 'recon'
 
-                top = os.path.join(dirname+'_rec', basename+'_rec')
+                top = os.path.join(rec_dir, basename+'_rec')
                 tiff_file_list = sorted(
                     list(filter(lambda x: x.endswith(('.tif', '.tiff')), os.listdir(top))))
                 z_start = int(tiff_file_list[0].split('.')[0].split('_')[1])
@@ -314,7 +415,7 @@ class TomoLog():
                     self.args.idx = int(w//2)-int(w//32)
 
                 z = utils.read_tiff(
-                    f'{dirname}_rec/{basename}_rec/{rec_prefix}_{self.args.idz:05}.tiff').copy()
+                    f'{rec_dir}/{basename}_rec/{rec_prefix}_{self.args.idz:05}.tiff').copy()
                 
                 # read x,y slices by lines
                 y = np.zeros((h, w), dtype='float32')
@@ -325,7 +426,7 @@ class TomoLog():
                 lchunk = int(np.ceil((z_end-z_start)/nthreads))
                 lchunk = np.minimum(lchunk, np.int32(z_end-z_start-np.arange(nthreads)*lchunk))  # chunk sizes
                 for k in range(nthreads):
-                    read_proc = Thread(target=utils.read_tiff_part, args=(self.args, f'{dirname}_rec/{basename}_rec/{rec_prefix}', x, y, z_start, k*lchunk[0], lchunk[k]))
+                    read_proc = Thread(target=utils.read_tiff_part, args=(self.args, f'{rec_dir}/{basename}_rec/{rec_prefix}', x, y, z_start, k*lchunk[0], lchunk[k]))
                     threads.append(read_proc)
                     read_proc.start()
                 for th in threads:
@@ -424,14 +525,14 @@ class TomoLog():
         if len(recon) == 3:
             # publish reconstructions
             self.google_slide.create_textbox_with_text(
-                presentation_id, page_id, f'Reconstruction                                   Zoom {self.args.zoom}                                         ', 590, 20, 270, -5, 10, 0)
+                presentation_id, page_id, f'Reconstruction                                   Zoom {self.args.zoom}', 430, 14, 270, 2, 10, 0)
             self.plot_recon(recon, self.file_name_recon)
             recon_url = cloud.upload(self.args, self.file_name_recon)
             log.info('Publish reconstruction')
             self.google_slide.create_image(
-                presentation_id, page_id, recon_url, 470, 400, 230, 5)
+                presentation_id, page_id, recon_url, 470, 336, 230, 21)
 
             rec_line = self.read_rec_line()
             self.google_slide.create_textbox_with_text(
-                presentation_id, page_id, rec_line, 1000, 20, 5, 391, 6, 0)
+                presentation_id, page_id, rec_line, 710, 43, 5, 360, 6, 0)
 
